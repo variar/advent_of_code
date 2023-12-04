@@ -5,9 +5,9 @@ toDigits :: String -> String
 toDigits =  filter isDigit
 
 calibrationValue :: String -> Int
-calibrationValue line = 10 * digitToInt (head d) + digitToInt (last d)
+calibrationValue line = 10 * digitToInt (head onlyDigits) + digitToInt (last onlyDigits)
     where
-    d = toDigits line
+    onlyDigits = toDigits line
 
 lineCalibrations = map calibrationValue
 

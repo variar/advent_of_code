@@ -16,9 +16,9 @@ stringsToDigits (x : xs) = x : stringsToDigits xs
 stringsToDigits "" = ""
 
 calibrationValue :: String -> Int
-calibrationValue line = 10 * digitToInt (head d) + digitToInt (last d)
+calibrationValue line = 10 * digitToInt (head onlyDigits) + digitToInt (last onlyDigits)
   where
-    d = filter isDigit (stringsToDigits line)
+    onlyDigits = filter isDigit (stringsToDigits line)
 
 totalCalibration :: [String] -> Int
 totalCalibration = sum . map calibrationValue
