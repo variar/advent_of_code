@@ -1,6 +1,3 @@
-import Data.ByteString (count)
-import Data.List (insertBy)
-
 splitAtDelimiter :: (Char -> Bool) -> String -> [String]
 splitAtDelimiter p s = case dropWhile p s of
   "" -> []
