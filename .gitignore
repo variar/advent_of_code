@@ -1,3 +1,5 @@
 *.o
 *.hi
 *.out
+*_input
+*_test
