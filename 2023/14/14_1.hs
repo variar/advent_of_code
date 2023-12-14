@@ -13,25 +13,29 @@ main = do
   input <- readFile inputFile
   print . solve . lines $ input
 
-movableGroups :: String -> [String]
+type PlatformSegment = String
+
+type PlatformState = [PlatformSegment]
+
+movableGroups :: PlatformSegment -> [PlatformSegment]
 movableGroups line
   | null unmovable = [line]
-  | otherwise = next : movableGroups toSplit
+  | otherwise = newGroup : movableGroups leftover
   where
     unmovable = elemIndices '#' line
-    next = take (head unmovable) line
-    toSplit = drop (head unmovable + 1) line
+    newGroup = take (head unmovable) line
+    leftover = drop (head unmovable + 1) line
 
-moveRocks :: String -> String
-moveRocks line = intercalate "#" movedGroups
+moveRocks :: PlatformSegment -> PlatformSegment
+moveRocks segment = intercalate "#" movedGroups
   where
-    groups = movableGroups line
+    groups = movableGroups segment
     movedGroups = map sort groups
 
-weightRocks :: String -> Int
-weightRocks line = sum $ zipWith (+) rockPositions (replicate (length rockPositions) 1)
+weightRocks :: PlatformSegment -> Int
+weightRocks segment = sum $ map succ rockPositions
   where
-    rockPositions = elemIndices 'O' line
+    rockPositions = elemIndices 'O' segment
 
 solve input = output
   where
