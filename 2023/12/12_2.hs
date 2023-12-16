@@ -1,4 +1,6 @@
 import Data.List
+import Data.Map (Map)
+import Data.Map qualified as Map
 import Data.Maybe
 import Debug.Trace
 import System.Environment
@@ -27,7 +29,11 @@ splitToIntegers s = map stringToInteger $ splitAtDelimiter (== ',') s
   where
     stringToInteger s = read s :: Int
 
-type Condition = (String, [Int])
+type Pattern = String
+
+type DamagedSprings = [Int]
+
+type Condition = (Pattern, DamagedSprings)
 
 addCorners :: Condition -> Condition
 addCorners (pattern, damaged) = ("#." ++ pattern ++ ".#", [1] ++ damaged ++ [1])
@@ -36,98 +42,43 @@ unfoldCondition :: String -> Int -> Condition -> Condition
 unfoldCondition c folds (pattern, damaged) = (intercalate c $ replicate folds pattern, concat $ replicate folds damaged)
 
 parseConditions :: String -> Int -> [String] -> [Condition]
-parseConditions c folds = map (unfoldCondition c folds . parseCondition)
+parseConditions c folds = map (addCorners . unfoldCondition c folds . parseCondition)
   where
-    parseCondition l = (takeWhile (/= ' ') l, (splitToIntegers . dropWhile (/= ' ') $ l))
+    parseCondition l = (takeWhile (/= ' ') l, splitToIntegers . dropWhile (/= ' ') $ l)
 
-extractDamaged :: String -> [Int]
-extractDamaged pattern = map length headParts
+type MatchPrefixLength = Int
+
+type MatchState = (MatchPrefixLength, Pattern, DamagedSprings)
+
+type MemoMap = Map MatchState Int
+
+countMatchesFromState :: MemoMap -> MatchState -> (MemoMap, Int)
+countMatchesFromState memo state
+  | isJust knownState = (memo, fromJust knownState)
+  | null pattern && length unmatchedDamaged /= 1 = memoize (memo, 0)
+  | null pattern && head unmatchedDamaged /= matchedPrefix = memoize (memo, 0)
+  | null pattern && head unmatchedDamaged == matchedPrefix = memoize (memo, 1)
+  | null unmatchedDamaged = if '#' `notElem` pattern then memoize (memo, 1) else memoize (memo, 0)
+  | sum unmatchedDamaged - matchedPrefix > length pattern - length unmatchedDamaged + 1 = memoize (memo, 0)
+  | sum unmatchedDamaged - matchedPrefix > length (filter (== '#') pattern) + length (filter (== '?') pattern) = memoize (memo, 0)
+  | p == '#' && (matchedPrefix >= head unmatchedDamaged) = memoize (memo, 0)
+  | p == '#' && (matchedPrefix < head unmatchedDamaged) = memoize $ countMatchesFromState memo (matchedPrefix + 1, xp, unmatchedDamaged)
+  | p == '.' && matchedPrefix == 0 = memoize $ countMatchesFromState memo (matchedPrefix, xp, unmatchedDamaged)
+  | p == '.' && matchedPrefix < head unmatchedDamaged = memoize (memo, 0)
+  | p == '.' && matchedPrefix == head unmatchedDamaged = memoize $ countMatchesFromState memo (0, xp, tail unmatchedDamaged)
+  | p == '?' = memoize (memo2, count1 + count2)
   where
-    parts = splitAtDelimiter (== '?') pattern
-    headParts = splitAtDelimiter (== '.') (head parts)
+    knownState = Map.lookup state memo
+    (matchedPrefix, pattern, unmatchedDamaged) = state
+    p : xp = pattern
+    (memo1, count1) = countMatchesFromState memo (matchedPrefix, '.' : xp, unmatchedDamaged)
+    (memo2, count2) = countMatchesFromState memo1 (matchedPrefix, '#' : xp, unmatchedDamaged)
+    memoize (m, v) = (Map.insert state v m, v)
 
-isPossiblePattern :: Condition -> String -> Bool
-isPossiblePattern condition pattern
-  | leftUnknown == 0 = damagedHead == damaged
-  | otherwise = all isMatch pairsHead && all isMatch pairsTail
-  where
-    damagedHead = extractDamaged pattern
-    damagedTail = extractDamaged $ reverse pattern
-    unknownDamaged = length damaged - (length damagedHead + length damagedTail)
-    leftUnknown = length $ filter (== '?') pattern
-    damaged = snd condition
-    pairsHead = zip damagedHead damaged
-    pairsTail = zip damagedTail (reverse damaged)
-    isMatch (c1, c2)
-      | c1 == 0 || c2 == 0 = False
-      | c1 == c2 = True
-      | leftUnknown > 0 && c1 < c2 = True
-      | otherwise = False
-
-type PossiblePatternPredicate = String -> Bool
-
-replaceOne :: PossiblePatternPredicate -> String -> [String]
-replaceOne checkFn pattern = filter checkFn newPatterns
-  where
-    marks = elemIndices '?' pattern
-    addChar c m p = take (m) p ++ [c] ++ drop (m + 1) p
-    newPatterns
-      | null marks = [pattern]
-      | length marks == 1 = step1
-      | otherwise = map (addChar '.' (head marks)) step1 ++ map (addChar '#' (head marks)) step1
-      where
-        step1 = [addChar '.' (last marks) pattern, addChar '#' (last marks) pattern]
-
-countPossiblePatterns :: PossiblePatternPredicate -> String -> Int
-countPossiblePatterns checkFn pattern
-  | null nextPatterns = 0
-  | head nextPatterns == pattern = 1 + 0 * length (pattern)
-  | otherwise = sum $ map (countPossiblePatterns checkFn) nextPatterns
-  where
-    nextPatterns = replaceOne checkFn pattern
-
-countPossiblePatternsForCondition :: Condition -> Int
-countPossiblePatternsForCondition condition = traceShowId c
-  where
-    corners = addCorners condition
-    c = countPossiblePatterns (isPossiblePattern corners) (fst $ traceShowId corners)
-
-tryDot :: PossiblePatternPredicate -> String -> Maybe (String, String)
-tryDot checkFn pattern = newPatterns
-  where
-    marks = elemIndices '!' pattern
-    middleMark = take (length marks `div` 2 + 1) marks
-    split m p = (take m p ++ ".#", "#." ++ drop (m + 1) p)
-    newPatterns
-      | null marks = Nothing
-      | otherwise = Just (split (head middleMark) pattern)
-
-isValidCondition :: Condition -> Bool
-isValidCondition c = length (fst c) >= sum (snd c) + length (snd c) - 1
-
-makeSmallerConditions :: Condition -> [(Condition, Condition)]
-makeSmallerConditions condition = filter isValidSubConditions subConditions
-  where
-    damaged = snd condition
-    corners = addCorners condition
-    subPatterns = fromJust (tryDot (isPossiblePattern corners) (fst corners))
-    splitDamaged n = ([1] ++ take (length damaged - n) damaged ++ [1], [1] ++ drop (length damaged - n) damaged ++ [1])
-    splittedDamaged = map splitDamaged [0..length damaged]
-    buildCondition p d = ((fst p, fst d), (snd p,  snd d))
-    subConditions = map (buildCondition subPatterns) splittedDamaged
-    isValidSubConditions (c1, c2) = isValidCondition c1 && isValidCondition c2
-
-countPossiblePatternsFromSubConditions :: Condition -> Int
-countPossiblePatternsFromSubConditions condition = traceShowId c
-  where
-    corneredCondition = addCorners condition
-    subConditions = makeSmallerConditions corneredCondition
-    countSubConditions (c1, c2) = countPossiblePatternsForCondition c1 * countPossiblePatternsForCondition c2
-    c = sum $ map countSubConditions subConditions
+countMatches :: Condition -> Int
+countMatches (pattern, damaged) = snd $ countMatchesFromState Map.empty (0, pattern, damaged)
 
 solve input = output
   where
-    conditions = parseConditions "?" 2 input
-    conditions1 = parseConditions "!" 2 input
-    output = sum $ map countPossiblePatternsForCondition [conditions!!1]
-    -- output = sum $ map countPossiblePatternsFromSubConditions [conditions1!!1]
+    conditions = parseConditions "?" 5 input
+    output = sum $ map countMatches conditions
